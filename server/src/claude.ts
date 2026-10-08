@@ -1,12 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
-import type { AnthropicBeta } from "@anthropic-ai/sdk/resources/beta/beta";
 
-export const MODEL = process.env.CLAUDE_MODEL ?? "claude-opus-5-5";
-
-// Server-side refusal fallback: if the model declines, the API reroutes inside the same call.
-export function fallbackParams(): { betas: AnthropicBeta[]; fallbacks: "default" } {
-  return { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" };
-}
+// Claude Haiku 5.5 is the cheapest current model; override with CLAUDE_MODEL.
+export const MODEL = process.env.CLAUDE_MODEL ?? "claude-haiku-5-5";
 
 // Created on first use so the server can start (and tests run) without credentials.
 let client: Anthropic | undefined;

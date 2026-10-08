@@ -8,10 +8,12 @@ import {
   parseChaptersFromDescription,
   parsePastedTranscript,
   parseCommentThreads,
+  pickCaptionTrack,
   parseVideoId,
 } from "./youtube.js";
-import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
+import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { RecipeSchema } from "./recipe.js";
+import { readVideo } from "./app.js";
 import { buildSystemPrompt } from "./assistant.js";
 import { chunkTranscript } from "./sources.js";
 
@@ -113,7 +115,7 @@ test("parseCommentThreads puts the creator's comments first", () => {
 });
 
 test("recipe schema converts to a structured output format and parses", () => {
-  const format = betaZodOutputFormat(RecipeSchema);
+  const format = zodOutputFormat(RecipeSchema);
   assert.equal(format.type, "json_schema");
   const sample = {
     isRecipe: true, title: "Pancakes", servings: 4, totalTime: "20 min",
@@ -122,4 +124,28 @@ test("recipe schema converts to a structured output format and parses", () => {
     tips: [], gaps: ["Pan heat not stated"],
   };
   assert.deepEqual(format.parse(JSON.stringify(sample)), sample);
+});
+
+test("pickCaptionTrack prefers the spoken language", () => {
+  const t = (languageCode: string, kind?: string) => ({ baseUrl: languageCode + (kind ?? ""), languageCode, kind });
+  assert.equal(pickCaptionTrack([t("en"), t("iw"), t("iw", "asr")])?.baseUrl, "iw");
+  assert.equal(pickCaptionTrack([t("en"), t("he", "asr")])?.baseUrl, "heasr");
+  assert.equal(pickCaptionTrack([t("en-US"), t("en", "asr")])?.baseUrl, "en-US");
+  assert.equal(pickCaptionTrack([t("fr"), t("en")])?.baseUrl, "en");
+  assert.equal(pickCaptionTrack([]), undefined);
+});
+
+test("readVideo validates what the client sends back", () => {
+  const ok = {
+    videoId: "dQw4w9WgXcQ",
+    metadata: { title: "T", author: "A" },
+    chapters: [],
+    transcript: [{ start: 0, duration: 1, text: "hi" }],
+  };
+  const v = readVideo(ok);
+  assert.equal(v?.metadata.description, "");
+  assert.deepEqual(v?.comments, []);
+  assert.equal(readVideo({ ...ok, videoId: "bad" }), null);
+  assert.equal(readVideo({ ...ok, metadata: undefined }), null);
+  assert.equal(readVideo("nope"), null);
 });

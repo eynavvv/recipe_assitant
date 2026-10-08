@@ -47,19 +47,3 @@ export function scaleQuantity(quantity: string, factor: number): string {
   if (scaled.some((p) => p === null)) return quantity
   return scaled.join('–')
 }
-
-export type VoiceCommand = 'next' | 'previous' | 'repeat' | 'replay' | 'pause' | 'play' | 'stop' | 'timer'
-
-// Quick cook-mode commands handled in the browser without a round trip to Claude.
-export function parseVoiceCommand(text: string): VoiceCommand | null {
-  const t = text.toLowerCase().replace(/[^a-z' ]/g, ' ').replace(/\s+/g, ' ').trim()
-  if (/^(ok |okay )?(next|next step|go on|continue|done|what's next|what now)$/.test(t)) return 'next'
-  if (/^(previous|previous step|go back|back|last step)$/.test(t)) return 'previous'
-  if (/^(repeat|repeat that|say that again|again|what was that|read it again)$/.test(t)) return 'repeat'
-  if (/^(replay|show me again|show me|replay step|play it again|watch again)$/.test(t)) return 'replay'
-  if (/^(pause|pause video|wait|hold on)$/.test(t)) return 'pause'
-  if (/^(play|resume|play video)$/.test(t)) return 'play'
-  if (/^(stop|stop talking|quiet|shut up|be quiet)$/.test(t)) return 'stop'
-  if (/^(start (the )?timer|set (a |the )?timer|timer)$/.test(t)) return 'timer'
-  return null
-}

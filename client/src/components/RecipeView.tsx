@@ -46,7 +46,7 @@ export function RecipeView({ recipe, loading, error, servings, onServingsChange,
   const factor = recipe.servings && servings ? servings / recipe.servings : 1
 
   return (
-    <div className="recipe">
+    <div className="recipe" dir="auto">
       <div className="recipe-head">
         <div>
           <h3>{recipe.title}</h3>

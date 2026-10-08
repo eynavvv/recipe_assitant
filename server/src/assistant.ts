@@ -1,5 +1,5 @@
 import type Anthropic from "@anthropic-ai/sdk";
-import { fallbackParams, MODEL, getClient } from "./claude.js";
+import { MODEL, getClient } from "./claude.js";
 import { buildSourceMaterial } from "./sources.js";
 import type { Recipe } from "./recipe.js";
 import { formatTimestamp, type VideoContext } from "./youtube.js";
@@ -19,9 +19,10 @@ export function buildSystemPrompt(ctx: VideoContext, recipe?: Recipe): string {
     ? `\n\n<recipe_card>\n${JSON.stringify(recipe, null, 1)}\n</recipe_card>\nThe viewer sees this recipe card in the app, with steps numbered from 1. Use it as the primary reference and the video material for detail.`
     : "";
 
-  return `You are a cooking companion next to a recipe video the viewer is following, often with messy hands, so they ask by voice and hear your answers read aloud. They may also ask about the video itself (who made it, when, what equipment).
+  return `You are a cooking companion next to a recipe video the viewer is following in the kitchen, so they need quick answers. They may also ask about the video itself (who made it, when, what equipment).
 
 How to answer:
+- Reply in the language the viewer writes in (often Hebrew or English), even if the video is in another language.
 - Answer from the recipe card and the video material below. If the video doesn't say, say so in a few words, then give your best practical cooking advice and label it as yours.
 - Be brief: one to three short sentences, the direct answer first ("Two tablespoons." / "Medium heat, about 5 minutes."). No lists or headings unless asked for the full ingredient list or all steps.
 - For quantities, use the viewer's scaled servings when given and say the scaled amount.
@@ -55,15 +56,14 @@ export async function streamAnswer(
 ): Promise<void> {
   const state = describeState(currentTime, cook, recipe);
   // Viewer state travels with the newest question so the cached system prompt stays stable.
-  const messages: Anthropic.Beta.BetaMessageParam[] = history.map((turn, i) =>
+  const messages: Anthropic.MessageParam[] = history.map((turn, i) =>
     i === history.length - 1 && turn.role === "user" ? { role: "user", content: turn.content + state } : turn,
   );
 
-  const stream = getClient().beta.messages.stream(
+  const stream = getClient().messages.stream(
     {
       model: MODEL,
       max_tokens: 8000,
-      ...fallbackParams(),
       output_config: { effort: "low" },
       system: [{ type: "text", text: buildSystemPrompt(ctx, recipe), cache_control: { type: "ephemeral" } }],
       messages,

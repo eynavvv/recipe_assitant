@@ -6,14 +6,10 @@ interface Props {
   recipe: Recipe
   stepIndex: number
   loopStep: boolean
-  handsFree: boolean
-  listening: boolean
-  voiceSupported: boolean
   timerEndsAt: number | null
   onStep: (index: number) => void
   onReplay: () => void
   onToggleLoop: () => void
-  onToggleHandsFree: () => void
   onStartTimer: (seconds: number) => void
   onCancelTimer: () => void
   onExit: () => void
@@ -57,7 +53,7 @@ export function CookMode(props: Props) {
         </button>
       </header>
 
-      <p className="cook-step" aria-live="polite">
+      <p className="cook-step" aria-live="polite" dir="auto">
         {step.text}
       </p>
 
@@ -80,12 +76,6 @@ export function CookMode(props: Props) {
         <label className="toggle">
           <input type="checkbox" checked={props.loopStep} onChange={props.onToggleLoop} /> Loop this step
         </label>
-        {props.voiceSupported && (
-          <label className="toggle" title='Listens continuously. Say "next", "repeat", "show me again", or ask anything.'>
-            <input type="checkbox" checked={props.handsFree} onChange={props.onToggleHandsFree} /> Hands-free
-            {props.handsFree && <span className={`dot ${props.listening ? 'on' : ''}`} aria-label={props.listening ? 'Listening' : 'Not listening'} />}
-          </label>
-        )}
       </div>
 
       <nav className="cook-nav">
@@ -96,9 +86,6 @@ export function CookMode(props: Props) {
           {isLast ? 'Finish' : 'Next step →'}
         </button>
       </nav>
-      {props.handsFree && (
-        <p className="muted small hint">Say "next", "go back", "repeat", "show me again", "start the timer", or ask any question.</p>
-      )}
     </section>
   )
 }

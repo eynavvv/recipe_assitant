@@ -21,12 +21,3 @@ export function extractSeek(text: string): { seconds: number | null; text: strin
   if (!m) return { seconds: null, text }
   return { seconds: parseTimestamp(m[1]), text: text.replace(SEEK_RE, '') }
 }
-
-// Text suitable for speech synthesis: no markup, timestamps read naturally.
-export function toSpeakable(text: string): string {
-  return extractSeek(text)
-    .text.replace(TIMESTAMP_RE, (_, ts: string) => `at ${ts}`)
-    .replace(/```[\s\S]*?```/g, ' (see the code in the chat) ')
-    .replace(/[*_`#>]/g, '')
-    .trim()
-}

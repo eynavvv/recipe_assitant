@@ -103,7 +103,7 @@ export function parseChaptersFromDescription(description: string): Chapter[] {
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36";
 
-interface CaptionTrack {
+export interface CaptionTrack {
   baseUrl: string;
   languageCode: string;
   kind?: string; // "asr" for auto-generated
@@ -211,14 +211,13 @@ async function fetchInnertubePlayer(videoId: string): Promise<PlayerResponse | n
   return (await res.json()) as PlayerResponse;
 }
 
-function pickCaptionTrack(tracks: CaptionTrack[]): CaptionTrack | undefined {
-  const isEn = (t: CaptionTrack) => t.languageCode.startsWith("en");
-  return (
-    tracks.find((t) => isEn(t) && t.kind !== "asr") ??
-    tracks.find((t) => isEn(t)) ??
-    tracks.find((t) => t.kind !== "asr") ??
-    tracks[0]
-  );
+// Prefer captions in the language actually spoken. The auto-generated ("asr") track tells us
+// which language that is; a human-made track in the same language beats it.
+export function pickCaptionTrack(tracks: CaptionTrack[]): CaptionTrack | undefined {
+  const lang = (t: CaptionTrack) => t.languageCode.split("-")[0];
+  const asr = tracks.find((t) => t.kind === "asr");
+  if (asr) return tracks.find((t) => t.kind !== "asr" && lang(t) === lang(asr)) ?? asr;
+  return tracks.find((t) => lang(t) === "en") ?? tracks[0];
 }
 
 function decodeEntities(s: string): string {

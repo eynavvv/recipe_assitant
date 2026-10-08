@@ -5,21 +5,8 @@ import { MessageText } from './MessageText'
 interface Props {
   messages: ChatMessage[]
   busy: boolean
-  speakReplies: boolean
-  speaking: boolean
-  ttsSupported: boolean
-  onToggleSpeak: () => void
-  onStopSpeaking: () => void
-  onSend: (text: string, viaVoice: boolean) => void
+  onSend: (text: string) => void
   onSeek: (seconds: number) => void
-  voice: {
-    supported: boolean
-    listening: boolean
-    interim: string
-    error: string | null
-    start: () => void
-    stop: () => void
-  }
 }
 
 const SUGGESTIONS = ['What do I need to buy?', 'Can I make this ahead?', 'What can I use instead of butter?', 'Show me the hardest part']
@@ -28,7 +15,6 @@ export function ChatPanel(props: Props) {
   const { messages, busy, onSend, onSeek } = props
   const [input, setInput] = useState('')
   const endRef = useRef<HTMLDivElement>(null)
-  const { voice } = props
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
@@ -38,32 +24,22 @@ export function ChatPanel(props: Props) {
     const text = input.trim()
     if (!text || busy) return
     setInput('')
-    onSend(text, false)
+    onSend(text)
   }
 
   return (
     <section className="chat">
       <header className="chat-header">
         <h2>Ask the cook</h2>
-        {props.ttsSupported && (
-          <label className="toggle" title="Read every answer aloud">
-            <input type="checkbox" checked={props.speakReplies} onChange={props.onToggleSpeak} /> Speak answers
-          </label>
-        )}
-        {props.speaking && (
-          <button className="ghost small" onClick={props.onStopSpeaking}>
-            Stop speaking
-          </button>
-        )}
       </header>
 
       <div className="messages">
         {messages.length === 0 && (
           <div className="empty">
-            <p className="muted">Ask about ingredients, steps, swaps or timing, or ask to see a part again. Try:</p>
+            <p className="muted">Ask about ingredients, steps, swaps or timing, in English or Hebrew, or ask to see a part again. Try:</p>
             <div className="suggestions">
               {SUGGESTIONS.map((s) => (
-                <button key={s} onClick={() => onSend(s, false)} disabled={busy}>
+                <button key={s} onClick={() => onSend(s)} disabled={busy}>
                   {s}
                 </button>
               ))}
@@ -71,7 +47,7 @@ export function ChatPanel(props: Props) {
           </div>
         )}
         {messages.map((m) => (
-          <div key={m.id} className={`msg ${m.role}`}>
+          <div key={m.id} className={`msg ${m.role}`} dir="auto">
             {m.role === 'assistant' ? (
               m.content ? (
                 <MessageText text={m.content} onSeek={onSeek} />
@@ -90,7 +66,6 @@ export function ChatPanel(props: Props) {
         <div ref={endRef} />
       </div>
 
-      {voice.error && <p className="error small">{voice.error}</p>}
 
       <form
         className="composer"
@@ -100,7 +75,7 @@ export function ChatPanel(props: Props) {
         }}
       >
         <textarea
-          value={voice.listening ? voice.interim : input}
+          value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
@@ -108,28 +83,11 @@ export function ChatPanel(props: Props) {
               submit()
             }
           }}
-          placeholder={voice.listening ? 'Listening…' : 'Ask a question, or say "show me…"'}
+          placeholder='Ask a question, or "show me…"'
           rows={1}
-          readOnly={voice.listening}
+          dir="auto"
         />
-        {voice.supported && (
-          <button
-            type="button"
-            className={`mic ${voice.listening ? 'on' : ''}`}
-            onClick={() => (voice.listening ? voice.stop() : voice.start())}
-            disabled={busy && !voice.listening}
-            aria-label={voice.listening ? 'Stop listening' : 'Ask by voice'}
-            title={voice.listening ? 'Stop listening' : 'Ask by voice'}
-          >
-            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
-              <path
-                fill="currentColor"
-                d="M12 14a3 3 0 0 0 3-3V5a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2Z"
-              />
-            </svg>
-          </button>
-        )}
-        <button type="submit" className="primary" disabled={busy || !input.trim() || voice.listening}>
+        <button type="submit" className="primary" disabled={busy || !input.trim()}>
           Send
         </button>
       </form>

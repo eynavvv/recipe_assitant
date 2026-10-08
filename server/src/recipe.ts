@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
-import { fallbackParams, MODEL, getClient } from "./claude.js";
+import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
+import { MODEL, getClient } from "./claude.js";
 import { buildSourceMaterial } from "./sources.js";
 import type { VideoContext } from "./youtube.js";
 
@@ -41,14 +41,14 @@ const INSTRUCTIONS = `Extract the recipe from this cooking video so a home cook 
 - Mark each ingredient's source. Use "inferred" only for things clearly used on screen or implied by the steps but never stated, and leave their quantity null rather than guessing.
 - Steps follow the order of the video. Give each step the transcript timestamp where it starts and where its footage ends, so the app can loop that clip. Split long stretches into steps a cook can do one at a time; merge trivial ones.
 - Keep the creator's units. Don't convert.
+- Write the recipe in the language the video is spoken in (for example Hebrew for a Hebrew video), whatever language the metadata is in.
 - If this isn't a cooking video, set isRecipe to false and leave the lists empty.`;
 
 export async function extractRecipe(ctx: VideoContext): Promise<Recipe> {
-  const response = await getClient().beta.messages.parse({
+  const response = await getClient().messages.parse({
     model: MODEL,
     max_tokens: 16000,
-    ...fallbackParams(),
-    output_config: { effort: "medium", format: betaZodOutputFormat(RecipeSchema) },
+    output_config: { effort: "medium", format: zodOutputFormat(RecipeSchema) },
     messages: [{ role: "user", content: `${buildSourceMaterial(ctx)}\n\n${INSTRUCTIONS}` }],
   });
   if (response.stop_reason === "refusal") throw new Error("Claude declined to extract a recipe from this video.");

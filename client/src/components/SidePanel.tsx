@@ -57,7 +57,7 @@ export function SidePanel({ video, currentTime, onSeek, onPasteTranscript, recip
                 <li key={c.start}>
                   <button className={i === chapterIdx ? 'current' : ''} onClick={() => onSeek(c.start)}>
                     <span className="time">{formatTimestamp(c.start)}</span>
-                    <span>{c.title}</span>
+                    <span dir="auto">{c.title}</span>
                   </button>
                 </li>
               ))}
@@ -77,7 +77,7 @@ export function SidePanel({ video, currentTime, onSeek, onPasteTranscript, recip
                 {video.transcript.map((s, i) => (
                   <button key={i} data-idx={i} className={i === lineIdx ? 'current' : ''} onClick={() => onSeek(s.start)}>
                     <span className="time">{formatTimestamp(s.start)}</span>
-                    <span>{s.text}</span>
+                    <span dir="auto">{s.text}</span>
                   </button>
                 ))}
               </div>
@@ -102,7 +102,7 @@ function PasteTranscript({ onSubmit }: { onSubmit: (text: string) => Promise<voi
         No captions could be fetched for this video, so answers rely on the title and description. If the video has a transcript on
         YouTube (⋯ → Show transcript), copy it and paste it here.
       </p>
-      <textarea value={text} onChange={(e) => setText(e.target.value)} rows={8} placeholder={'0:00\nWelcome to the course…'} />
+      <textarea dir="auto" value={text} onChange={(e) => setText(e.target.value)} rows={8} placeholder={'0:00\nWelcome to the course…'} />
       {error && <p className="error">{error}</p>}
       <button
         className="primary"
@@ -168,7 +168,7 @@ function Info({ video }: { video: VideoContext }) {
           ))}
         </div>
       )}
-      {m.description && <p className="description">{m.description}</p>}
+      {m.description && <p className="description" dir="auto">{m.description}</p>}
     </div>
   )
 }
