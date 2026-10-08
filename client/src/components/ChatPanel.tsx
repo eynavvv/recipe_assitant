@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ChatMessage } from '../types'
 import { MessageText } from './MessageText'
-import { useSpeechRecognition } from '../hooks/useSpeech'
 
 interface Props {
   messages: ChatMessage[]
@@ -13,26 +12,27 @@ interface Props {
   onStopSpeaking: () => void
   onSend: (text: string, viaVoice: boolean) => void
   onSeek: (seconds: number) => void
-  onListeningChange: (listening: boolean) => void
+  voice: {
+    supported: boolean
+    listening: boolean
+    interim: string
+    error: string | null
+    start: () => void
+    stop: () => void
+  }
 }
 
-const SUGGESTIONS = ['Summarize this video', 'What do I need before starting?', 'Skip to the main demo', 'Who made this and when?']
+const SUGGESTIONS = ['What do I need to buy?', 'Can I make this ahead?', 'What can I use instead of butter?', 'Show me the hardest part']
 
 export function ChatPanel(props: Props) {
   const { messages, busy, onSend, onSeek } = props
   const [input, setInput] = useState('')
   const endRef = useRef<HTMLDivElement>(null)
-  const voice = useSpeechRecognition((text) => onSend(text, true))
+  const { voice } = props
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
   }, [messages])
-
-  const onListeningChangeRef = useRef(props.onListeningChange)
-  useEffect(() => {
-    onListeningChangeRef.current = props.onListeningChange
-  })
-  useEffect(() => onListeningChangeRef.current(voice.listening), [voice.listening])
 
   const submit = () => {
     const text = input.trim()
@@ -44,7 +44,7 @@ export function ChatPanel(props: Props) {
   return (
     <section className="chat">
       <header className="chat-header">
-        <h2>Ask about this video</h2>
+        <h2>Ask the cook</h2>
         {props.ttsSupported && (
           <label className="toggle" title="Read every answer aloud">
             <input type="checkbox" checked={props.speakReplies} onChange={props.onToggleSpeak} /> Speak answers
@@ -60,7 +60,7 @@ export function ChatPanel(props: Props) {
       <div className="messages">
         {messages.length === 0 && (
           <div className="empty">
-            <p className="muted">Ask anything about the video, or tell me where to jump. Try:</p>
+            <p className="muted">Ask about ingredients, steps, swaps or timing, or ask to see a part again. Try:</p>
             <div className="suggestions">
               {SUGGESTIONS.map((s) => (
                 <button key={s} onClick={() => onSend(s, false)} disabled={busy}>
@@ -108,7 +108,7 @@ export function ChatPanel(props: Props) {
               submit()
             }
           }}
-          placeholder={voice.listening ? 'Listening…' : 'Ask a question, or say "skip to…"'}
+          placeholder={voice.listening ? 'Listening…' : 'Ask a question, or say "show me…"'}
           rows={1}
           readOnly={voice.listening}
         />

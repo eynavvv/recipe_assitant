@@ -1,12 +1,19 @@
-import { useRef, useState } from 'react'
-import type { ChatMessage, VideoContext } from './types'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import type { ChatMessage, Recipe, VideoContext } from './types'
 import { useYouTubePlayer } from './hooks/useYouTubePlayer'
-import { useSpeechSynthesis } from './hooks/useSpeech'
+import { useSpeechRecognition, useSpeechSynthesis } from './hooks/useSpeech'
+import { useWakeLock } from './hooks/useWakeLock'
 import { ChatPanel } from './components/ChatPanel'
 import { SidePanel } from './components/SidePanel'
+import { RecipeView } from './components/RecipeView'
+import { CookMode } from './components/CookMode'
 import { extractSeek, toSpeakable } from './time'
+import { parseVoiceCommand } from './recipe'
 
 const newId = () => Math.random().toString(36).slice(2)
+// In hands-free mode the mic also hears the video, so free-form questions need a wake word
+// unless the video is paused. Short commands like "next" always work.
+const WAKE_RE = /^(hey |ok |okay )?(chef|cook|assistant)[,.!]?\s+/i
 
 async function readError(res: Response): Promise<string> {
   try {
@@ -26,10 +33,39 @@ export default function App() {
   const [busy, setBusy] = useState(false)
   const [speakReplies, setSpeakReplies] = useState(false)
 
+  const [recipe, setRecipe] = useState<Recipe | null>(null)
+  const [recipeLoading, setRecipeLoading] = useState(false)
+  const [recipeError, setRecipeError] = useState<string | null>(null)
+  const [servings, setServings] = useState<number | null>(null)
+
+  const [cookStep, setCookStep] = useState<number | null>(null)
+  const [loopStep, setLoopStep] = useState(true)
+  const [handsFree, setHandsFree] = useState(false)
+  const [timerEndsAt, setTimerEndsAt] = useState<number | null>(null)
+
   const player = useYouTubePlayer(video?.videoId ?? null)
   const tts = useSpeechSynthesis()
   // Remembers whether the video was playing before a voice question paused it.
   const resumeAfterRef = useRef(false)
+  const cooking = cookStep !== null && !!recipe?.steps.length
+  useWakeLock(cooking)
+
+  const loadRecipe = useCallback(async (videoId: string) => {
+    setRecipe(null)
+    setRecipeError(null)
+    setRecipeLoading(true)
+    try {
+      const res = await fetch(`/api/video/${videoId}/recipe`)
+      if (!res.ok) throw new Error(await readError(res))
+      const r: Recipe = await res.json()
+      setRecipe(r)
+      setServings(r.servings)
+    } catch (err) {
+      setRecipeError(err instanceof Error ? err.message : 'Failed to read the recipe')
+    } finally {
+      setRecipeLoading(false)
+    }
+  }, [])
 
   const loadVideo = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -46,6 +82,8 @@ export default function App() {
       const ctx: VideoContext = await res.json()
       setVideo(ctx)
       setMessages([])
+      setCookStep(null)
+      loadRecipe(ctx.videoId)
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : 'Failed to load video')
     } finally {
@@ -61,16 +99,58 @@ export default function App() {
       body: JSON.stringify({ text }),
     })
     if (!res.ok) throw new Error(await readError(res))
-    setVideo(await res.json())
+    const ctx: VideoContext = await res.json()
+    setVideo(ctx)
+    loadRecipe(ctx.videoId)
   }
 
-  // Pause the video while the viewer asks a question out loud.
-  const onListeningChange = (listening: boolean) => {
-    if (!listening) return
-    tts.cancel()
-    resumeAfterRef.current = player.playing
-    player.pause()
+  const say = (text: string, onDone?: () => void) => {
+    if (speakReplies || handsFree) tts.speak(text, onDone)
+    else onDone?.()
   }
+
+  // ---- Cook mode ----
+
+  const goToStep = (index: number, announce = handsFree || speakReplies) => {
+    if (!recipe || index < 0 || index >= recipe.steps.length) return
+    setCookStep(index)
+    setTimerEndsAt(null)
+    const step = recipe.steps[index]
+    if (step.start !== null) player.seekTo(step.start)
+    if (announce) tts.speak(`Step ${index + 1}. ${step.text}`)
+  }
+
+  const replayStep = () => {
+    const step = cookStep !== null ? recipe?.steps[cookStep] : undefined
+    if (step?.start != null) player.seekTo(step.start)
+  }
+
+  const exitCooking = () => {
+    setCookStep(null)
+    setHandsFree(false)
+    setTimerEndsAt(null)
+    tts.cancel()
+  }
+
+  // Loop the current step's clip so the cook can glance at it as often as needed.
+  useEffect(() => {
+    if (!cooking || !loopStep || !player.playing) return
+    const step = recipe!.steps[cookStep!]
+    if (step.start === null || step.end === null || step.end <= step.start) return
+    if (player.currentTime >= step.end + 0.5) player.seekTo(step.start)
+  }, [cooking, loopStep, player, recipe, cookStep])
+
+  const { speak } = tts
+  useEffect(() => {
+    if (timerEndsAt === null) return
+    const id = window.setTimeout(() => {
+      speak("Time's up!")
+      navigator.vibrate?.([300, 150, 300])
+    }, Math.max(0, timerEndsAt - Date.now()))
+    return () => window.clearTimeout(id)
+  }, [timerEndsAt, speak])
+
+  // ---- Chat ----
 
   const send = async (text: string, viaVoice: boolean) => {
     if (!video || busy) return
@@ -93,6 +173,7 @@ export default function App() {
         body: JSON.stringify({
           videoId: video.videoId,
           currentTime: player.getTime(),
+          cook: cooking ? { stepIndex: cookStep, servings } : servings ? { stepIndex: -1, servings } : undefined,
           messages: history.map(({ role, content }) => ({ role, content })),
         }),
       })
@@ -114,7 +195,6 @@ export default function App() {
       full = `Sorry, ${err instanceof Error ? err.message : 'something went wrong'}.`
     }
 
-    const { text: visible } = extractSeek(full)
     update(full, false)
     setBusy(false)
 
@@ -122,15 +202,85 @@ export default function App() {
       if (!seeked && resumeAfterRef.current) player.play()
       resumeAfterRef.current = false
     }
-    if (speakReplies || viaVoice) tts.speak(toSpeakable(visible), resume)
+    if (viaVoice || speakReplies || handsFree) tts.speak(toSpeakable(full), resume)
     else resume()
   }
+
+  // ---- Voice ----
+
+  const handleVoice = (raw: string) => {
+    if (cooking) {
+      const cmd = parseVoiceCommand(raw)
+      const step = recipe!.steps[cookStep!]
+      switch (cmd) {
+        case 'next':
+          if (cookStep! < recipe!.steps.length - 1) goToStep(cookStep! + 1, true)
+          else say("That was the last step. Enjoy your meal!")
+          return
+        case 'previous':
+          goToStep(cookStep! - 1, true)
+          return
+        case 'repeat':
+          tts.speak(`Step ${cookStep! + 1}. ${step.text}`)
+          return
+        case 'replay':
+          replayStep()
+          return
+        case 'pause':
+          player.pause()
+          return
+        case 'play':
+          player.play()
+          return
+        case 'stop':
+          tts.cancel()
+          return
+        case 'timer':
+          if (step.timerSeconds) setTimerEndsAt(Date.now() + step.timerSeconds * 1000)
+          tts.speak(step.timerSeconds ? 'Timer started.' : "This step doesn't have a timer.")
+          return
+      }
+      if (handsFree && player.playing) {
+        const m = raw.match(WAKE_RE)
+        if (!m) return // probably the video talking
+        raw = raw.slice(m[0].length)
+      }
+    }
+    if (raw.trim()) send(raw.trim(), true)
+  }
+
+  const voice = useSpeechRecognition(handleVoice)
+
+  // Pause the video while the viewer asks a question out loud (not in hands-free, where the mic is always on).
+  useEffect(() => {
+    if (!voice.listening || handsFree) return
+    tts.cancel()
+    resumeAfterRef.current = player.playing
+    player.pause()
+    // Only react to the mic turning on.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [voice.listening])
+
+  // Hands-free: keep listening whenever we're not talking or thinking.
+  const { start: startListening } = voice
+  useEffect(() => {
+    if (!handsFree || !cooking || voice.listening || busy || tts.speaking || voice.error) return
+    const id = window.setTimeout(startListening, 400)
+    return () => window.clearTimeout(id)
+  }, [handsFree, cooking, voice.listening, voice.error, busy, tts.speaking, startListening])
+
+  useEffect(() => {
+    if (voice.error) setHandsFree(false)
+  }, [voice.error])
 
   if (!video) {
     return (
       <main className="landing">
-        <h1>Tutorial Video Assistant</h1>
-        <p className="muted">Paste a YouTube tutorial link. Watch it here and ask questions by text or voice, or ask to jump to any part.</p>
+        <h1>Recipe Video Assistant</h1>
+        <p className="muted">
+          Paste a YouTube cooking video. You'll get the recipe written out, a hands-free cook mode that walks you through each step, and
+          answers to any question about the dish.
+        </p>
         <form onSubmit={loadVideo} className="url-form">
           <input
             type="url"
@@ -155,7 +305,14 @@ export default function App() {
   return (
     <main className="app">
       <header className="topbar">
-        <button className="ghost" onClick={() => setVideo(null)} aria-label="Open another video">
+        <button
+          className="ghost"
+          onClick={() => {
+            exitCooking()
+            setVideo(null)
+          }}
+          aria-label="Open another video"
+        >
           ← New video
         </button>
         <div className="title">
@@ -164,12 +321,51 @@ export default function App() {
         </div>
       </header>
 
-      <div className="layout">
+      <div className={`layout ${cooking ? 'cooking' : ''}`}>
         <div className="left">
           <div className="player">
             <div ref={player.containerRef} />
           </div>
-          <SidePanel video={video} currentTime={player.currentTime} onSeek={player.seekTo} onPasteTranscript={pasteTranscript} />
+          {cooking ? (
+            <CookMode
+              recipe={recipe!}
+              stepIndex={cookStep!}
+              loopStep={loopStep}
+              handsFree={handsFree}
+              listening={voice.listening}
+              voiceSupported={voice.supported}
+              timerEndsAt={timerEndsAt}
+              onStep={(i) => goToStep(i)}
+              onReplay={replayStep}
+              onToggleLoop={() => setLoopStep((v) => !v)}
+              onToggleHandsFree={() => {
+                if (handsFree) voice.stop()
+                setHandsFree((v) => !v)
+              }}
+              onStartTimer={(s) => setTimerEndsAt(Date.now() + s * 1000)}
+              onCancelTimer={() => setTimerEndsAt(null)}
+              onExit={exitCooking}
+            />
+          ) : (
+            <SidePanel
+              video={video}
+              currentTime={player.currentTime}
+              onSeek={player.seekTo}
+              onPasteTranscript={pasteTranscript}
+              recipe={
+                <RecipeView
+                  recipe={recipe}
+                  loading={recipeLoading}
+                  error={recipeError}
+                  servings={servings}
+                  onServingsChange={setServings}
+                  onSeek={player.seekTo}
+                  onStartCooking={(i) => goToStep(i)}
+                  onRetry={() => loadRecipe(video.videoId)}
+                />
+              }
+            />
+          )}
         </div>
         <ChatPanel
           messages={displayMessages}
@@ -184,7 +380,7 @@ export default function App() {
           onStopSpeaking={tts.cancel}
           onSend={send}
           onSeek={player.seekTo}
-          onListeningChange={onListeningChange}
+          voice={voice}
         />
       </div>
     </main>

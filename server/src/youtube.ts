@@ -25,10 +25,18 @@ export interface VideoMetadata {
   thumbnailUrl?: string;
 }
 
+export interface Comment {
+  author: string;
+  text: string;
+  likes: number;
+  byCreator: boolean;
+}
+
 export interface VideoContext {
   videoId: string;
   metadata: VideoMetadata;
   chapters: Chapter[];
+  comments: Comment[];
   transcript: TranscriptSegment[];
   transcriptLanguage?: string;
   transcriptSource: "captions" | "manual" | "none";
@@ -281,6 +289,54 @@ export function parsePastedTranscript(text: string): TranscriptSegment[] {
   return segments;
 }
 
+interface CommentThreadsResponse {
+  items?: {
+    snippet: {
+      topLevelComment: {
+        snippet: {
+          authorDisplayName: string;
+          authorChannelId?: { value: string };
+          textOriginal: string;
+          likeCount: number;
+        };
+      };
+    };
+  }[];
+}
+
+// Recipes often live in the creator's pinned comment. Needs a YouTube Data API key;
+// without one, the app works from captions and the description only.
+export async function fetchTopComments(videoId: string, channelId?: string, max = 20): Promise<Comment[]> {
+  const key = process.env.YOUTUBE_API_KEY;
+  if (!key) return [];
+  const url = new URL("https://www.googleapis.com/youtube/v3/commentThreads");
+  url.search = new URLSearchParams({
+    part: "snippet",
+    videoId,
+    order: "relevance",
+    textFormat: "plainText",
+    maxResults: String(max),
+    key,
+  }).toString();
+  const res = await fetch(url);
+  if (!res.ok) return [];
+  return parseCommentThreads((await res.json()) as CommentThreadsResponse, channelId);
+}
+
+export function parseCommentThreads(data: CommentThreadsResponse, channelId?: string): Comment[] {
+  const comments = (data.items ?? []).map(({ snippet }) => {
+    const c = snippet.topLevelComment.snippet;
+    return {
+      author: c.authorDisplayName,
+      text: c.textOriginal,
+      likes: c.likeCount,
+      byCreator: !!channelId && c.authorChannelId?.value === channelId,
+    };
+  });
+  // Creator comments first: that's where the written recipe usually is.
+  return [...comments.filter((c) => c.byCreator), ...comments.filter((c) => !c.byCreator)];
+}
+
 export async function loadVideoContext(videoId: string): Promise<VideoContext> {
   const [page, innertube] = await Promise.all([
     fetchWatchPage(videoId).catch(() => ({ player: null, initialData: null })),
@@ -327,10 +383,13 @@ export async function loadVideoContext(videoId: string): Promise<VideoContext> {
     }
   }
 
+  const comments = await fetchTopComments(videoId, details.channelId).catch(() => []);
+
   return {
     videoId,
     metadata,
     chapters,
+    comments,
     transcript,
     transcriptLanguage,
     transcriptSource: transcript.length ? "captions" : "none",

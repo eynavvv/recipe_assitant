@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { VideoContext } from '../types'
 import { formatTimestamp } from '../time'
 
@@ -7,9 +7,12 @@ interface Props {
   currentTime: number
   onSeek: (seconds: number) => void
   onPasteTranscript: (text: string) => Promise<void>
+  recipe: ReactNode
 }
 
-type Tab = 'chapters' | 'transcript' | 'info'
+type Tab = 'recipe' | 'chapters' | 'transcript' | 'info'
+
+const TAB_LABEL: Record<Tab, string> = { recipe: 'Recipe', chapters: 'Chapters', transcript: 'Transcript', info: 'Info' }
 
 function activeIndex(starts: number[], t: number): number {
   let idx = -1
@@ -20,8 +23,8 @@ function activeIndex(starts: number[], t: number): number {
   return idx
 }
 
-export function SidePanel({ video, currentTime, onSeek, onPasteTranscript }: Props) {
-  const [tab, setTab] = useState<Tab>(video.chapters.length ? 'chapters' : 'transcript')
+export function SidePanel({ video, currentTime, onSeek, onPasteTranscript, recipe }: Props) {
+  const [tab, setTab] = useState<Tab>('recipe')
   const [follow, setFollow] = useState(true)
   const listRef = useRef<HTMLDivElement>(null)
 
@@ -38,14 +41,15 @@ export function SidePanel({ video, currentTime, onSeek, onPasteTranscript }: Pro
   return (
     <section className="side-panel">
       <div className="tabs" role="tablist">
-        {(['chapters', 'transcript', 'info'] as Tab[]).map((t) => (
+        {(Object.keys(TAB_LABEL) as Tab[]).map((t) => (
           <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? 'active' : ''} onClick={() => setTab(t)}>
-            {t === 'chapters' ? `Chapters (${video.chapters.length})` : t === 'transcript' ? 'Transcript' : 'Info'}
+            {TAB_LABEL[t]}
           </button>
         ))}
       </div>
 
       <div className="tab-body" ref={listRef}>
+        {tab === 'recipe' && recipe}
         {tab === 'chapters' &&
           (video.chapters.length ? (
             <ol className="chapters">
@@ -148,6 +152,8 @@ function Info({ video }: { video: VideoContext }) {
             <dd>{m.category}</dd>
           </>
         )}
+        <dt>Comments</dt>
+        <dd>{video.comments.length ? `${video.comments.length} top comments read` : 'Not available'}</dd>
         <dt>Transcript</dt>
         <dd>
           {video.transcript.length

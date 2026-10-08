@@ -7,9 +7,13 @@ import {
   parseCaptionXml,
   parseChaptersFromDescription,
   parsePastedTranscript,
+  parseCommentThreads,
   parseVideoId,
 } from "./youtube.js";
-import { buildSystemPrompt, chunkTranscript } from "./assistant.js";
+import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
+import { RecipeSchema } from "./recipe.js";
+import { buildSystemPrompt } from "./assistant.js";
+import { chunkTranscript } from "./sources.js";
 
 test("parseVideoId handles common link shapes", () => {
   const id = "dQw4w9WgXcQ";
@@ -94,7 +98,28 @@ test("chunkTranscript groups into blocks and the prompt includes everything", ()
     metadata: { title: "T", author: "A", description: "D", lengthSeconds: 60, keywords: ["k"] },
     chapters: [{ start: 0, title: "Intro" }],
     transcript: segs,
+    comments: [{ author: "Chef", text: "Recipe: 2 eggs", likes: 5, byCreator: true }],
     transcriptSource: "captions",
   });
-  for (const s of ["Title: T", "Channel: A", "[0:00] Intro", "[0:40] line8 line9", "[[seek"]) assert.ok(prompt.includes(s), s);
+  for (const s of ["Title: T", "Channel: A", "[0:00] Intro", "[0:40] line8 line9", "[[seek", "Chef (video creator)", "Recipe: 2 eggs"]) assert.ok(prompt.includes(s), s);
+});
+
+test("parseCommentThreads puts the creator's comments first", () => {
+  const item = (name: string, id: string, text: string) => ({
+    snippet: { topLevelComment: { snippet: { authorDisplayName: name, authorChannelId: { value: id }, textOriginal: text, likeCount: 1 } } },
+  });
+  const out = parseCommentThreads({ items: [item("Fan", "UCfan", "yum"), item("Chef", "UCchef", "Ingredients: ...")] }, "UCchef");
+  assert.deepEqual(out.map((c) => [c.author, c.byCreator]), [["Chef", true], ["Fan", false]]);
+});
+
+test("recipe schema converts to a structured output format and parses", () => {
+  const format = betaZodOutputFormat(RecipeSchema);
+  assert.equal(format.type, "json_schema");
+  const sample = {
+    isRecipe: true, title: "Pancakes", servings: 4, totalTime: "20 min",
+    ingredients: [{ group: null, name: "flour", quantity: "1 1/2", unit: "cup", note: null, source: "description" }],
+    steps: [{ text: "Whisk.", start: 30, end: 45, timerSeconds: null }],
+    tips: [], gaps: ["Pan heat not stated"],
+  };
+  assert.deepEqual(format.parse(JSON.stringify(sample)), sample);
 });
